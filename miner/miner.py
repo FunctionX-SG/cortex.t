@@ -462,7 +462,7 @@ class StreamMiner():
                     completion = claude_client.messages.stream(**stream_kwargs)
                     async with completion as stream:
                         async for text in stream.text_stream:
-                            await synapsesend(
+                            await send(
                                 {
                                     "type": "http.response.body",
                                     "body": text.encode("utf-8"),
