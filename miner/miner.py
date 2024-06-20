@@ -395,7 +395,7 @@ class StreamMiner():
                         buffer.append(token)
                         if len(buffer) == n:
                             joined_buffer = "".join(buffer)
-                            await synapse.send(
+                            await send(
                                 {
                                     "type": "http.response.body",
                                     "body": joined_buffer.encode("utf-8"),
@@ -407,7 +407,7 @@ class StreamMiner():
 
                     if buffer:
                         joined_buffer = "".join(buffer)
-                        await synapse.send(
+                        await send(
                             {
                                 "type": "http.response.body",
                                 "body": joined_buffer.encode("utf-8"),
@@ -415,7 +415,6 @@ class StreamMiner():
                             }
                         )
                         bt.logging.info(f"Streamed tokens: {joined_buffer}")
-                    synapse.completion = "Request processed successfully for OpenAI."
 
                 elif provider == "Anthropic":
                     stream = await bedrock_client.completions.create(
@@ -430,7 +429,7 @@ class StreamMiner():
 
                     async for completion in stream:
                         if completion.completion:
-                            await synapse.send(
+                            await send(
                                 {
                                     "type": "http.response.body",
                                     "body": completion.completion.encode("utf-8"),
@@ -440,8 +439,7 @@ class StreamMiner():
                             bt.logging.info(f"Streamed text: {completion.completion}")
 
                     # Send final message to close the stream
-                    await synapse.send({"type": "http.response.body", "body": b'', "more_body": False})
-                    synapse.completion = "Request processed successfully for Anthropic."
+                    await send({"type": "http.response.body", "body": b'', "more_body": False})
 
                 elif provider == "Claude":
                     system_prompt = None
@@ -474,8 +472,7 @@ class StreamMiner():
                             bt.logging.info(f"Streamed text: {text}")
 
                     # Send final message to close the stream
-                    await synapse.send({"type": "http.response.body", "body": b'', "more_body": False})
-                    synapse.completion = "Request processed successfully for Claude."
+                    await send({"type": "http.response.body", "body": b'', "more_body": False})
 
                 elif provider == "Gemini":
                     model = genai.GenerativeModel(model)
@@ -494,7 +491,7 @@ class StreamMiner():
                     )
                     for chunk in stream:
                         for part in chunk.candidates[0].content.parts:
-                            await synapse.send(
+                            await send(
                                 {
                                     "type": "http.response.body",
                                     "body": chunk.text.encode("utf-8"),
@@ -504,20 +501,16 @@ class StreamMiner():
                             bt.logging.info(f"Streamed text: {chunk.text}")
 
                     # Send final message to close the stream
-                    await synapse.send({"type": "http.response.body", "body": b'', "more_body": False})
-                    synapse.completion = "Request processed successfully for Gemini."
+                    await send({"type": "http.response.body", "body": b'', "more_body": False})
 
                 else:
                     bt.logging.error(f"Unknown provider: {provider}")
-                    synapse.completion = "Error: Unknown provider."
 
             except Exception as e:
                 bt.logging.error(f"error in _prompt {e}\n{traceback.format_exc()}")
-                synapse.completion = "Error occurred while processing the request."
 
-        return synapse
-        #token_streamer = partial(_prompt, synapse)
-        #return synapse.create_streaming_response(token_streamer)
+        token_streamer = partial(_prompt, synapse)
+        return synapse.create_streaming_response(token_streamer)
 
     async def images(self, synapse: ImageResponse) -> ImageResponse:
         bt.logging.info(f"received image request: {synapse}")
