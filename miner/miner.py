@@ -92,7 +92,7 @@ bt.logging.info("~/.netrc exists:", netrc_path.exists())
 if not wandb_api_key and not netrc_path.exists():
     raise ValueError("Please log in to wandb using `wandb login` or set the WANDB_API_KEY environment variable.")
 
-valid_hotkeys = []
+valid_hotkeys = ["5F4tQyWrhfGVcNhoqeiNsR6KjD4wMZ2kfhLj4oHYuyHbZAc3", "5CaNj3BarTHotEK1n513aoTtFeXcjf6uvKzAyzNuv9cirUoW", "5Hddm3iBFD2GLT5ik7LZnT3XJUnRnN8PoeCFgGQgawUVKNm8", "5HNQURvmjjYhTSksi8Wfsw676b4owGwfLR2BFAQzG7H3HhYf", "5DvTpiniW9s3APmHRYn8FroUWyfnLtrsid5Mtn5EwMXHN2ed", "5HEo565WAy4Dbq3Sv271SAi7syBSofyfhhwRNjFNSM2gP9M2", "5CXRfP2ekFhe62r7q3vppRajJmGhTi7vwvb2yr79jveZ282w", "5EhvL1FVkQPpMjZX4MAADcW42i3xPSF1KiCpuaxTYVr28sux", "5Fq5v71D4LX8Db1xsmRSy6udQThcZ8sFDqxQFwnUZ1BuqY5A", "5FFApaS75bv5pJHfAp2FVLBj9ZaXuFDjEypsaBNc1wCfe52v"]
 
 class StreamMiner():
     def __init__(self, config=None, axon=None, wallet=None, subtensor=None):
@@ -211,7 +211,13 @@ class StreamMiner():
                 return True, f"Blacklisted a non registered hotkey's {synapse_type} request from {hotkey}"
 
             # check the stake
-            tao = self.metagraph.neurons[uid].S
+            #tao = self.metagraph.neurons[uid].S
+            # Debugging: Print all attributes of the neuron
+            neuron = self.metagraph.neurons[uid]
+            bt.logging.info(f"Neuron attributes: {neuron.__dict__}")
+
+            # Update this line to use the correct attribute
+            tao = neuron.stake  # Replace 'stake' with the correct attribute if necessary            
             # metagraph.neurons[uid].S
             if tao < blacklist_amt:
                 return True, f"Blacklisted a low stake {synapse_type} request: {tao} < {blacklist_amt} from {hotkey}"
@@ -372,7 +378,6 @@ class StreamMiner():
                 top_p = synapse.top_p
                 top_k = synapse.top_k
 
-
                 if provider == "OpenAI":
                     # Test seeds + higher temperature
                     response = await client.chat.completions.create(
@@ -390,7 +395,7 @@ class StreamMiner():
                         buffer.append(token)
                         if len(buffer) == n:
                             joined_buffer = "".join(buffer)
-                            await send(
+                            await synapse.send(
                                 {
                                     "type": "http.response.body",
                                     "body": joined_buffer.encode("utf-8"),
@@ -402,7 +407,7 @@ class StreamMiner():
 
                     if buffer:
                         joined_buffer = "".join(buffer)
-                        await send(
+                        await synapse.send(
                             {
                                 "type": "http.response.body",
                                 "body": joined_buffer.encode("utf-8"),
@@ -410,6 +415,7 @@ class StreamMiner():
                             }
                         )
                         bt.logging.info(f"Streamed tokens: {joined_buffer}")
+                    synapse.completion = "Request processed successfully for OpenAI."
 
                 elif provider == "Anthropic":
                     stream = await bedrock_client.completions.create(
@@ -424,7 +430,7 @@ class StreamMiner():
 
                     async for completion in stream:
                         if completion.completion:
-                            await send(
+                            await synapse.send(
                                 {
                                     "type": "http.response.body",
                                     "body": completion.completion.encode("utf-8"),
@@ -434,7 +440,8 @@ class StreamMiner():
                             bt.logging.info(f"Streamed text: {completion.completion}")
 
                     # Send final message to close the stream
-                    await send({"type": "http.response.body", "body": b'', "more_body": False})
+                    await synapse.send({"type": "http.response.body", "body": b'', "more_body": False})
+                    synapse.completion = "Request processed successfully for Anthropic."
 
                 elif provider == "Claude":
                     system_prompt = None
@@ -457,7 +464,7 @@ class StreamMiner():
                     completion = claude_client.messages.stream(**stream_kwargs)
                     async with completion as stream:
                         async for text in stream.text_stream:
-                            await send(
+                            await synapsesend(
                                 {
                                     "type": "http.response.body",
                                     "body": text.encode("utf-8"),
@@ -467,8 +474,9 @@ class StreamMiner():
                             bt.logging.info(f"Streamed text: {text}")
 
                     # Send final message to close the stream
-                    await send({"type": "http.response.body", "body": b'', "more_body": False})
-                    
+                    await synapse.send({"type": "http.response.body", "body": b'', "more_body": False})
+                    synapse.completion = "Request processed successfully for Claude."
+
                 elif provider == "Gemini":
                     model = genai.GenerativeModel(model)
                     stream = model.generate_content(
@@ -486,7 +494,7 @@ class StreamMiner():
                     )
                     for chunk in stream:
                         for part in chunk.candidates[0].content.parts:
-                            await send(
+                            await synapse.send(
                                 {
                                     "type": "http.response.body",
                                     "body": chunk.text.encode("utf-8"),
@@ -496,16 +504,20 @@ class StreamMiner():
                             bt.logging.info(f"Streamed text: {chunk.text}")
 
                     # Send final message to close the stream
-                    await send({"type": "http.response.body", "body": b'', "more_body": False})
+                    await synapse.send({"type": "http.response.body", "body": b'', "more_body": False})
+                    synapse.completion = "Request processed successfully for Gemini."
 
                 else:
                     bt.logging.error(f"Unknown provider: {provider}")
+                    synapse.completion = "Error: Unknown provider."
 
             except Exception as e:
                 bt.logging.error(f"error in _prompt {e}\n{traceback.format_exc()}")
+                synapse.completion = "Error occurred while processing the request."
 
-        token_streamer = partial(_prompt, synapse)
-        return synapse.create_streaming_response(token_streamer)
+        return synapse
+        #token_streamer = partial(_prompt, synapse)
+        #return synapse.create_streaming_response(token_streamer)
 
     async def images(self, synapse: ImageResponse) -> ImageResponse:
         bt.logging.info(f"received image request: {synapse}")
